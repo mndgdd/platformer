@@ -56,36 +56,12 @@ class TitleScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor(C.sky);
     this.input.enabled = true;
+    this.texts = [];
+    this.layout();
 
-    const isP = !!(window.__UI__ && window.__UI__.isPortrait && window.__UI__.isPortrait());
-    const px = (n) => Math.round(n * (isP ? 1.25 : 1)) + 'px';    /* 标题：放大但要放得进 960 宽 */
-    const ps = (n) => Math.round(n * (isP ? 1.15 : 1)) + 'px';   /* 副标题/说明：小幅放大，防止横向溢出 */
-
-    this.add.text(VIEW.W / 2, 132, '平台跳跃 · 像素远征', {
-      ...FONT, fontSize: px(44), color: '#e9f0ff', fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    this.add.text(VIEW.W / 2, 188, LEVELS.length + ' 关 · 金币 · 尖刺 · 巡逻敌人 · 广告复活', {
-      ...FONT, fontSize: ps(18), color: '#9fb0d0'
-    }).setOrigin(0.5);
-
-    if (this.result.win) {
-      this.add.text(VIEW.W / 2, 244, `通关！金币 ${this.result.coins || 0} · 阵亡 ${this.result.deaths || 0} 次`, {
-        ...FONT, fontSize: ps(22), color: '#8ce99a'
-      }).setOrigin(0.5);
-    }
-
-    this.add.text(VIEW.W / 2, 318, '← → / A D 移动　　空格 / ↑ / W 跳跃　　长按跳更高', {
-      ...FONT, fontSize: ps(17), color: '#c7d3ea'
-    }).setOrigin(0.5);
-    this.add.text(VIEW.W / 2, 350, '↓ + 跳 穿过浅色单向平台　　碰尖刺或敌人回检查点　　R 重开', {
-      ...FONT, fontSize: ps(15), color: '#8b9ab8'
-    }).setOrigin(0.5);
-
-    const hint = this.add.text(VIEW.W / 2, 438, '按 空格 / 点击屏幕 开始', {
-      ...FONT, fontSize: ps(20), color: '#ffd54f'
-    }).setOrigin(0.5);
-    this.tweens.add({ targets: hint, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
+    this.onResizeEvt = () => this.layout();
+    this.scale.on('resize', this.onResizeEvt);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResizeEvt));
 
     this.input.keyboard.on('keydown-SPACE', () => this.beginRun());
     this.input.keyboard.on('keydown-ENTER', () => this.beginRun());
@@ -96,6 +72,51 @@ class TitleScene extends Phaser.Scene {
     if (auto !== null) {
       const idx = Math.max(0, Math.min(LEVELS.length - 1, (parseInt(auto, 10) || 1) - 1));
       this.beginRunAt(idx);
+    }
+  }
+
+  /* 标题页按画布真实尺寸排版：横屏沿用 960×540 设计稿（整体等比缩放），
+     竖屏换成纵向排布，字号直接按屏幕像素给，不再靠放大系数硬撑。 */
+  layout() {
+    (this.texts || []).forEach((t) => t.destroy());
+    this.texts = [];
+    if (this.hintTween) { this.hintTween.stop(); this.hintTween = null; }
+
+    const w = this.scale.width, h = this.scale.height;
+    const portrait = h > w * 1.05;
+    const push = (x, y, text, size, color, bold) => {
+      const t = this.add.text(x, y, text, {
+        ...FONT, fontSize: Math.round(size) + 'px', color, fontStyle: bold ? 'bold' : 'normal'
+      }).setOrigin(0.5);
+      this.texts.push(t);
+      return t;
+    };
+
+    if (portrait) {
+      const cx = w / 2;
+      push(cx, h * 0.20, '平台跳跃 · 像素远征', Math.min(w * 0.082, 40), '#e9f0ff', true);
+      push(cx, h * 0.20 + Math.min(w * 0.075, 34), LEVELS.length + ' 关 · 广告复活', w * 0.042, '#9fb0d0');
+      if (this.result.win) {
+        push(cx, h * 0.20 + Math.min(w * 0.075, 34) * 2,
+          `通关！金币 ${this.result.coins || 0} · 阵亡 ${this.result.deaths || 0} 次`, w * 0.048, '#8ce99a');
+      }
+      push(cx, h * 0.52, '← → / A D 移动', w * 0.045, '#c7d3ea');
+      push(cx, h * 0.52 + w * 0.07, '空格 / ↑ / W 跳跃（长按更高）', w * 0.045, '#c7d3ea');
+      push(cx, h * 0.52 + w * 0.14, '↓ + 跳 穿单向平台　R 重开', w * 0.040, '#8b9ab8');
+      const hint = push(cx, h * 0.80, '点击屏幕 开始', w * 0.052, '#ffd54f', true);
+      this.hintTween = this.tweens.add({ targets: hint, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
+    } else {
+      const fy = h / 540;
+      const cx = w / 2;
+      push(cx, 132 * fy, '平台跳跃 · 像素远征', 44 * fy, '#e9f0ff', true);
+      push(cx, 188 * fy, LEVELS.length + ' 关 · 金币 · 尖刺 · 巡逻敌人 · 广告复活', 18 * fy, '#9fb0d0');
+      if (this.result.win) {
+        push(cx, 244 * fy, `通关！金币 ${this.result.coins || 0} · 阵亡 ${this.result.deaths || 0} 次`, 22 * fy, '#8ce99a');
+      }
+      push(cx, 318 * fy, '← → / A D 移动　　空格 / ↑ / W 跳跃　　长按跳更高', 17 * fy, '#c7d3ea');
+      push(cx, 350 * fy, '↓ + 跳 穿过浅色单向平台　　碰尖刺或敌人回检查点　　R 重开', 15 * fy, '#8b9ab8');
+      const hint = push(cx, 438 * fy, '按 空格 / 点击屏幕 开始', 20 * fy, '#ffd54f');
+      this.hintTween = this.tweens.add({ targets: hint, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
     }
   }
 
@@ -132,24 +153,16 @@ class HudScene extends Phaser.Scene {
   constructor() { super('hud'); }
 
   create() {
-    const px = (n) => Math.round(n * uiK()) + 'px';
-    const mx = () => Math.round(18 * uiK());
-    const y2 = Math.round(14 + 26 * uiK());
-    const y3 = Math.round(14 + 48 * uiK());
+    this.levelText = this.add.text(0, 0, '', { ...FONT, fontSize: '16px', color: '#e9f0ff' });
+    this.coinText = this.add.text(0, 0, '', { ...FONT, fontSize: '16px', color: '#e9f0ff' }).setOrigin(1, 0);
+    this.deathText = this.add.text(0, 0, '', { ...FONT, fontSize: '13px', color: '#8b9ab8' }).setOrigin(1, 0);
+    this.reviveText = this.add.text(0, 0, '', { ...FONT, fontSize: '13px', color: '#ffd54f' }).setOrigin(1, 0);
+    this.banner = this.add.text(0, 0, '', { ...FONT, fontSize: '26px', color: '#ffd54f' }).setOrigin(0.5).setAlpha(0).setDepth(50);
+    this.bannerSub = this.add.text(0, 0, '', { ...FONT, fontSize: '15px', color: '#9fb0d0' }).setOrigin(0.5).setAlpha(0).setDepth(50);
 
-    this.levelText = this.add.text(mx(), 14, '', { ...FONT, fontSize: px(16), color: '#e9f0ff' });
-    this.coinText = this.add.text(VIEW.W - mx(), 14, '', { ...FONT, fontSize: px(16), color: '#e9f0ff' }).setOrigin(1, 0);
-    this.deathText = this.add.text(VIEW.W - mx(), y2, '', { ...FONT, fontSize: px(13), color: '#8b9ab8' }).setOrigin(1, 0);
-    this.reviveText = this.add.text(VIEW.W - mx(), y3, '', { ...FONT, fontSize: px(13), color: '#ffd54f' }).setOrigin(1, 0);
-
-    /* 转屏后字号跟着重算（竖屏放大到屏幕上仍可读） */
-    const applySize = () => {
-      this.levelText.setFontSize(px(16)).setX(mx());
-      this.coinText.setFontSize(px(16)).setX(VIEW.W - mx());
-      this.deathText.setFontSize(px(13)).setX(VIEW.W - mx()).setY(Math.round(14 + 26 * uiK()));
-      this.reviveText.setFontSize(px(13)).setX(VIEW.W - mx()).setY(Math.round(14 + 48 * uiK()));
-    };
-    window.addEventListener('resize', applySize);
+    this.layout();
+    this.onResizeEvt = () => this.layout();
+    this.scale.on('resize', this.onResizeEvt);
 
     const paint = () => {
       this.levelText.setText(this.registry.get('levelName') || '');
@@ -159,17 +172,63 @@ class HudScene extends Phaser.Scene {
       this.reviveText.setText(left === undefined ? '' : '广告复活 ' + left + ' 次');
     };
     paint();
+    if (this.pendingBanner) {
+      const p = this.pendingBanner;
+      this.pendingBanner = null;
+      this.showBanner(p[0], p[1], p[2]);
+    }
 
     this.registry.events.on('changedata-coins', paint);
     this.registry.events.on('changedata-deaths', paint);
     this.registry.events.on('changedata-levelName', paint);
     this.registry.events.on('changedata-revivesLeft', paint);
     this.events.once('shutdown', () => {
-      window.removeEventListener('resize', applySize);
+      this.scale.off('resize', this.onResizeEvt);
       this.registry.events.off('changedata-coins', paint);
       this.registry.events.off('changedata-deaths', paint);
       this.registry.events.off('changedata-levelName', paint);
       this.registry.events.off('changedata-revivesLeft', paint);
+    });
+  }
+
+  /* HUD 直接用画布像素排版（HUD 相机 zoom=1），横屏字号按 540 高折算，
+     竖屏给更大的字号，避免小屏上读不清 */
+  layout() {
+    const w = this.scale.width, h = this.scale.height;
+    const portrait = h > w * 1.05;
+    const base = portrait ? Math.max(15, Math.round(w * 0.042)) : Math.round(16 * h / 540);
+    const sub = portrait ? Math.max(12, Math.round(w * 0.033)) : Math.round(13 * h / 540);
+    const mx = portrait ? 12 : Math.round(18 * h / 540);
+    const y1 = portrait ? 12 : Math.round(14 * h / 540);
+    /* 竖屏右上角有 DOM 的"横屏更爽"胶囊，右侧统计往下让一行 */
+    const ry1 = portrait ? 46 : y1;
+    const y2 = ry1 + Math.round(base * 1.55);
+    const y3 = y2 + Math.round(sub * 1.7);
+
+    this.levelText.setFontSize(base).setPosition(mx, y1);
+    this.coinText.setFontSize(base).setPosition(w - mx, ry1);
+    this.deathText.setFontSize(sub).setPosition(w - mx, y2);
+    this.reviveText.setFontSize(sub).setPosition(w - mx, y3);
+
+    const bx = w / 2, by = h * 0.26;
+    this.banner.setFontSize(portrait ? Math.max(18, Math.round(w * 0.058)) : Math.round(26 * h / 540))
+      .setPosition(bx, by);
+    this.bannerSub.setFontSize(portrait ? Math.max(13, Math.round(w * 0.038)) : Math.round(15 * h / 540))
+      .setPosition(bx, by + (portrait ? Math.round(w * 0.075) : Math.round(30 * h / 540)));
+  }
+
+  /* 关卡开场提示 / 过关横幅：放在 HUD 相机里，不受关卡镜头缩放影响 */
+  showBanner(main, sub, ms) {
+    if (!this.banner) { this.pendingBanner = [main, sub, ms]; return; }
+    this.banner.setText(main || '');
+    this.bannerSub.setText(sub || '');
+    this.banner.setAlpha(1);
+    this.bannerSub.setAlpha(1);
+    if (this.bannerTween) { this.bannerTween.stop(); this.bannerTween = null; }
+    this.tweens.add({
+      targets: [this.banner, this.bannerSub],
+      alpha: 0, delay: Math.max(600, (ms || 1600) - 700), duration: 700,
+      onComplete: () => { this.banner.setText(''); this.bannerSub.setText(''); }
     });
   }
 }
@@ -206,9 +265,8 @@ class PlayScene extends Phaser.Scene {
     this.hazards = [];
 
     /* 物理世界底部要比屏幕低，玩家才能真的掉进坑里被判定死亡；
-       相机边界仍只到 VIEW.H，画面不会跟着掉下去 */
+       相机的缩放与上下边界由 applyView() 按横/竖屏分别设置 */
     this.physics.world.setBounds(0, 0, L.width, VIEW.H + 400);
-    this.cameras.main.setBounds(0, 0, L.width, VIEW.H);
     this.cameras.main.setBackgroundColor(C.sky);
 
     this.buildBackdrop(L);
@@ -225,8 +283,10 @@ class PlayScene extends Phaser.Scene {
     if (this.goalZone) this.physics.add.overlap(this.player, this.goalZone, () => this.reachGoal());
     if (this.checkpointZone) this.physics.add.overlap(this.player, this.checkpointZone, () => this.activateCheckpoint());
 
-    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
-    this.cameras.main.setDeadzone(150, 100);
+    this.applyView();
+    this.onResizeEvt = () => this.applyView();
+    this.scale.on('resize', this.onResizeEvt);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResizeEvt));
 
     if (!this.scene.isActive('hud')) this.scene.launch('hud');
     this.scene.bringToTop('hud');
@@ -247,26 +307,106 @@ class PlayScene extends Phaser.Scene {
 
   /* ------------------------------ 场景搭建 ------------------------------ */
 
+  /* 相机视野：横屏=高度铺满（可见世界更宽，两侧补天空/远景）；
+     竖屏=只露一段更窄的世界宽度、放大到 1:1 左右，多出来的竖向高度全给天空，
+     地面压到屏幕底部，这就是"竖屏专用相机视野" */
+  applyView() {
+    const cam = this.cameras.main;
+    const w = this.scale.width, h = this.scale.height;
+    const portrait = h > w * 1.05;
+    const L = this.level;
+
+    if (portrait) {
+      /* 竖屏可见世界宽度：420~560 之间，屏幕越宽给得越多 */
+      const visibleW = Math.max(420, Math.min(560, Math.round(w * 1.3)));
+      const z = w / visibleW;
+      const visibleH = h / z;
+      const sky = Math.max(0, visibleH - VIEW.H);
+      cam.setZoom(z);
+      /* 竖屏不用 Phaser 的边界夹取（它按视口高度算，会把镜头又拉回地面中线），
+         边界自己管：横向在 update 里 clamp，纵向钉死在地面底部 */
+      cam.useBounds = false;
+      /* Phaser 相机的 midPoint = scrollY + 视口高/2（不除 zoom），
+         要让世界 y=540 正好落在屏幕底边，就得反推出这个 scrollY */
+      const lockedY = (VIEW.H - h / (2 * z)) - h / 2;
+      cam.setScroll(0, lockedY);
+      /* 竖向没有可跟随的余量：停掉自动跟随，改成自己只跟 X、Y 钉在地面 */
+      cam.stopFollow();
+      cam.setDeadzone(0, 0);
+      this.manualFollow = true;
+      this.viewW = visibleW;
+      this.viewH = visibleH;
+      this.lockedScrollY = lockedY;
+    } else {
+      const z = h / VIEW.H;
+      cam.setZoom(z);
+      cam.setBounds(0, 0, L.width, VIEW.H);
+      cam.setDeadzone(150, 100);
+      this.manualFollow = false;
+      this.viewW = 0;
+      this.lockedScrollY = null;
+      cam.useBounds = true;
+      if (this.player) cam.startFollow(this.player, true, 0.12, 0.12);
+    }
+  }
+
   buildBackdrop(L) {
+    /* 竖屏相机能看到地面以上的大块天空：先用分层色带铺出"更高的天空"，
+       再补星点、月亮和远景云，保证加高后上方不是一块空白 */
+    const portrait = this.scale.height > this.scale.width * 1.05;
+    const SKY_TOP = -1500;
+    const bands = 60;
+    const SKY_BOTTOM = VIEW.H;                       /* 渐变一直铺到地平线（地面顶） */
+    for (let i = 0; i < bands; i++) {
+      const t = i / (bands - 1);                    /* 0=天顶（最暗） 1=地平线（略亮） */
+      const c0 = Phaser.Display.Color.Interpolate.ColorWithColor(
+        Phaser.Display.Color.ValueToColor(0x05070f),
+        Phaser.Display.Color.ValueToColor(0x24325a),
+        100, Math.round(t * 100)
+      );
+      const col = Phaser.Display.Color.GetColor(c0.r, c0.g, c0.b);
+      const y0 = SKY_TOP + (SKY_BOTTOM - SKY_TOP) * (i / bands);
+      const y1 = SKY_TOP + (SKY_BOTTOM - SKY_TOP) * ((i + 1) / bands);
+      this.add.rectangle(L.width / 2, (y0 + y1) / 2, L.width + 400, (y1 - y0) + 1, col)
+        .setScrollFactor(1, 1).setDepth(-20);
+    }
+
+    /* 月亮 + 光晕：只对竖屏有意义（横屏看不到世界 0 线以上），放很慢的横向视差 */
+    this.add.circle(240, -300, 100, 0x93a9d6, 0.06).setScrollFactor(0.05, 1).setDepth(-12);
+    this.add.circle(240, -300, 56, 0xbccbe6, 0.10).setScrollFactor(0.05, 1).setDepth(-12);
+    this.add.circle(240, -300, 30, 0xf2f7ff, 0.62).setScrollFactor(0.05, 1).setDepth(-12);
+
+    /* 远景云：很淡的水平椭圆，慢视差，只在天空区域 */
+    for (let i = 0; i < 16; i++) {
+      const x = ((i * 211) % Math.max(1, L.width)) + ((i % 3) * 60);
+      const y = -120 - ((i * 97) % 1100);
+      const w = 120 + ((i * 37) % 160);
+      this.add.ellipse(x, y, w, 26 + ((i * 11) % 18), 0x3c4a6d, 0.10 + ((i % 3) * 0.03))
+        .setScrollFactor(0.16, 1).setDepth(-10);
+    }
+
     /* 远景两层山丘：圆心压在地平线以下，只露出山尖，慢视差 */
+    const hillK = portrait ? 0.78 : 1;
     for (let layer = 0; layer < 2; layer++) {
       const step = layer === 0 ? 150 : 110;
       const rBase = layer === 0 ? 96 : 66;
       const baseY = layer === 0 ? 566 : 600;
       const color = layer === 0 ? C.hillFar : C.hillNear;
-      const alpha = layer === 0 ? 0.30 : 0.46;
+      const alpha = layer === 0 ? 0.38 : 0.52;
       const par = layer === 0 ? 0.22 : 0.42;
       for (let x = -120; x < L.width + 200; x += step) {
         const i = Math.round(x / step);
-        const r = rBase + ((i * 23) % 44);
-        this.add.circle(x, baseY - ((i * 17) % 34), r, color, alpha).setScrollFactor(par, par);
+        const r = (rBase + ((i * 23) % 44)) * hillK;
+        this.add.circle(x, baseY - ((i * 17) % 34) * hillK, r, color, alpha)
+          .setScrollFactor(par, 1).setDepth(layer === 0 ? -18 : -16);
       }
     }
-    /* 星点，最慢视差 */
-    for (let i = 0; i < 46; i++) {
+    /* 星点：从地面一直铺到加高后的天空顶部，竖向不做视差，位置可预期 */
+    for (let i = 0; i < 260; i++) {
       const x = (i * 97) % L.width;
-      const y = 44 + ((i * 53) % 300);
-      this.add.circle(x, y, 1.6, 0x9fb0d0, 0.45).setScrollFactor(0.1, 0.1);
+      const y = 44 + ((i * 53) % 300) - ((i % 9) * 170);
+      const a = 0.30 + ((i % 4) * 0.16);
+      this.add.circle(x, y, 1.2 + (i % 3) * 0.6, 0xa9bada, a).setScrollFactor(0.1, 1).setDepth(-14);
     }
   }
 
@@ -371,22 +511,23 @@ class PlayScene extends Phaser.Scene {
   }
 
   showLevelIntro() {
-    const intro = this.add.text(VIEW.W / 2, 116, this.level.name, {
-      ...FONT, fontSize: '26px', color: '#ffd54f'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(50);
-    const tip = this.add.text(VIEW.W / 2, 150, '到达绿旗进入下一关', {
-      ...FONT, fontSize: '15px', color: '#9fb0d0'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(50);
-    this.tweens.add({
-      targets: [intro, tip], alpha: 0, delay: 1600, duration: 700,
-      onComplete: () => { intro.destroy(); tip.destroy(); }
-    });
+    /* 开场提示交给 HUD 场景：它不受关卡镜头缩放影响，横竖屏都摆得正 */
+    const hud = this.scene.get('hud');
+    if (hud && hud.showBanner) hud.showBanner(this.level.name, '到达绿旗进入下一关', 1600);
   }
 
   /* -------------------------------- 主循环 -------------------------------- */
 
   update(time, delta) {
     if (!this.player || !this.player.body) return;
+    /* 竖屏镜头：只横向跟随（留出前方预判距离），纵向钉死让地面压在屏幕底部 */
+    if (this.manualFollow) {
+      const cam = this.cameras.main;
+      const maxX = Math.max(0, this.level.width - this.viewW);
+      const targetX = Math.max(0, Math.min(maxX, this.player.x - this.viewW * 0.42));
+      cam.scrollX += (targetX - cam.scrollX) * 0.16;
+      cam.scrollY = this.lockedScrollY;
+    }
     const dt = Math.min(delta, 40) / 1000;
     const body = this.player.body;
 
@@ -593,10 +734,8 @@ class PlayScene extends Phaser.Scene {
     this.physics.pause();
     const last = this.levelIndex >= LEVELS.length - 1;
     const msg = last ? '通关！' : '过关 · ' + this.level.name;
-    const txt = this.add.text(VIEW.W / 2, 196, msg, {
-      ...FONT, fontSize: '38px', color: '#8ce99a', fontStyle: 'bold'
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(60);
-    this.tweens.add({ targets: txt, scaleX: 1.12, scaleY: 1.12, duration: 420, yoyo: true });
+    const hud = this.scene.get('hud');
+    if (hud && hud.showBanner) hud.showBanner(msg, '', 900);
     this.cameras.main.flash(180, 120, 255, 160);
 
     this.time.delayedCall(900, () => {
@@ -622,7 +761,7 @@ const GAME_CONFIG = {
   width: VIEW.W,
   height: VIEW.H,
   backgroundColor: C.sky,
-  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scale: { mode: Phaser.Scale.RESIZE },
   physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, debug: false } },
   scene: [TitleScene, PlayScene, HudScene]
 };

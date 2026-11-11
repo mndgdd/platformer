@@ -227,7 +227,7 @@
         stage.style.visibility = 'visible';
         if (hint) hint.style.visibility = portraitNow ? 'hidden' : 'visible';
         pill.style.display = portraitNow ? 'inline-flex' : 'none';
-        /* 尺寸重算交给 Phaser 自己的 Scale 管理器（额外调 refresh 会拿到旧尺寸） */
+        /* 画布尺寸由 Phaser 的 Scale.RESIZE 跟着 #game（100vw/100vh）自动同步 */
       }
       window.addEventListener('resize', updateRotate);
       window.addEventListener('orientationchange', function () { setTimeout(updateRotate, 200); });

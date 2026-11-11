@@ -254,29 +254,46 @@ try {
   const file2 = await shot(client, '02-level2');
   console.log('截图:', file2);
 
-  /* 9. 自适应：横屏铺满高度；竖屏也自适应（按宽度铺满、可玩、不拦截） */
+  /* 9. 自适应：横屏与竖屏都铺满整块屏（画布 = 视口像素），相机各自换视野 */
   await client.send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
-  await sleep(700);
+  await sleep(900);
   const land = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
+    const cam = s.cameras.main;
     return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight,
+      zoom: +cam.zoom.toFixed(3), sy: Math.round(cam.scrollY),
       pill: document.getElementById('rotate-pill').style.display,
       portrait: window.__UI__.isPortrait() };`);
-  check('横屏：画布铺满屏幕高度', Math.abs(land.h - land.vh) <= 6, `${land.w}x${land.h} / 视口 ${land.vw}x${land.vh}`);
-  check('横屏：保持 16:9 不裁切画面', Math.abs(land.w / land.h - 16 / 9) < 0.05, `实际比例 ${(land.w / land.h).toFixed(3)}（目标 1.778）`);
+  check('横屏：画布铺满整块屏（宽高都等于视口）',
+    Math.abs(land.w - land.vw) <= 4 && Math.abs(land.h - land.vh) <= 4,
+    `${land.w}x${land.h} / 视口 ${land.vw}x${land.vh}`);
+  check('横屏：相机按高度铺满世界（zoom=h/540）',
+    Math.abs(land.zoom - land.vh / 540) < 0.03, `zoom=${land.zoom} 期望 ${(land.vh / 540).toFixed(3)}`);
   check('横屏：不显示"横屏更爽"按钮', land.pill === 'none', `pill=${land.pill}`);
-  const landPill = await evalJSON(client, `return { portrait: window.__UI__.isPortrait() };`);
-  check('横屏：不被判定为竖屏', landPill.portrait === false, `isPortrait=${landPill.portrait}`);
+  check('横屏：不被判定为竖屏', land.portrait === false, `isPortrait=${land.portrait}`);
   const fileLand = await shot(client, '03-landscape-844x390');
   console.log('截图:', fileLand);
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await sleep(800);
+  await sleep(900);
   const port = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
+    const cam = s.cameras.main;
+    const viewW = Math.round(cam.width / cam.zoom), viewH = Math.round(cam.height / cam.zoom);
     return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight,
+      zoom: +cam.zoom.toFixed(3), viewW, viewH, sky: Math.round(viewH - 540), sy: Math.round(cam.scrollY),
+      expectSy: Math.round((540 - cam.height / (2 * cam.zoom)) - cam.height / 2),
+      useBounds: cam.useBounds, manual: !!s.manualFollow,
       portrait: window.__UI__.isPortrait(), pill: document.getElementById('rotate-pill').style.display,
       running: window.GAME.isRunning, x: s.player.x, level: s.levelIndex };`);
-  check('竖屏：画布按宽度铺满（不再缩成一条）', Math.abs(port.w - port.vw) <= 4, `画布 ${port.w}x${port.h} / 视口 ${port.vw}x${port.vh}`);
-  check('竖屏：仍保持 16:9 不裁切', Math.abs(port.w / port.h - 16 / 9) < 0.05, `实际比例 ${(port.w / port.h).toFixed(3)}`);
+  check('竖屏：画布铺满整块屏（不再是一条 16:9 带子）',
+    Math.abs(port.w - port.vw) <= 4 && Math.abs(port.h - port.vh) <= 4,
+    `画布 ${port.w}x${port.h} / 视口 ${port.vw}x${port.vh}`);
+  check('竖屏：相机换成窄视野（可见世界宽 420~560）',
+    port.viewW >= 415 && port.viewW <= 565, `可见世界宽 ${port.viewW} zoom=${port.zoom}`);
+  check('竖屏：镜头上方多看到天空（可见高度多出 300px 以上）',
+    port.sky > 300, `可见世界高 ${port.viewH}，天空多出 ${port.sky}px`);
+  check('竖屏：地面压在屏幕底部（世界 y=540 落在屏幕底边）',
+    Math.abs(port.sy - port.expectSy) <= 3 && port.manual === true && port.useBounds === false,
+    `scrollY=${port.sy} 期望 ${port.expectSy} manual=${port.manual}`);
   check('竖屏：面板不再拦截（不弹全屏遮罩）', port.portrait === true && port.pill !== 'none', `isPortrait=${port.portrait} pill=${port.pill}`);
   check('竖屏：游戏仍在运行（不是暂停状态）', port.running === true, `GAME.isRunning=${port.running}`);
 
@@ -287,6 +304,8 @@ try {
   await keyUp(client, 'ArrowRight');
   await sleep(250);
   check('竖屏：按键可控（人在竖屏下能走）', portMoving.x - portStart > 60, `Δx=${Math.round(portMoving.x - portStart)} vx=${Math.round(portMoving.vx)}`);
+  const portCamX = await evalJSON(client, `return { sx: Math.round(s.cameras.main.scrollX) };`);
+  check('竖屏：相机只横向跟随（人走动后镜头也跟）', portCamX.sx > 3, `camScrollX=${portCamX.sx}`);
   const filePort = await shot(client, '04-portrait-390x844');
   console.log('截图:', filePort);
 
