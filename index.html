@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>平台跳跃 · 像素远征</title>
 <style>
   :root { color-scheme: dark; }
   html, body {
-    margin: 0; padding: 0; height: 100%;
+    margin: 0; padding: 0; height: 100%; width: 100%;
     background: #0b1020;
     font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
     overflow: hidden;
@@ -18,32 +18,87 @@
     position: fixed; inset: 0;
     display: flex; align-items: center; justify-content: center;
   }
-  #game { line-height: 0; }
-  #game canvas { border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+  /* 画布按视口大小自适应：Phaser FIT 保持 16:9，短边先满，长边留同色底 */
+  #game { width: 100vw; height: 100vh; line-height: 0; }
+  #game canvas { display: block; border-radius: 8px; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
 
-  /* 手机触控按钮：仅在触屏设备显示 */
+  /* ---------- 手机触控按钮 ---------- */
   #touch {
     position: fixed; inset: auto 0 0 0;
     display: none;
     justify-content: space-between;
-    padding: 14px 18px calc(14px + env(safe-area-inset-bottom));
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
     box-sizing: border-box;
     pointer-events: none;
+    z-index: 40;
   }
-  #touch .pad { display: flex; gap: 12px; pointer-events: auto; }
+  #touch .pad { display: flex; gap: 10px; pointer-events: auto; }
   #touch button {
-    width: 74px; height: 74px; border-radius: 50%;
+    width: 68px; height: 68px; border-radius: 50%;
     border: 1px solid rgba(160,190,255,.35);
     background: rgba(24,34,58,.78);
-    color: #dbe6ff; font-size: 20px; font-weight: 600;
+    color: #dbe6ff; font-size: 19px; font-weight: 600;
     user-select: none; -webkit-user-select: none;
     backdrop-filter: blur(6px);
   }
   #touch button:active { background: rgba(79,195,247,.45); }
-  #touch .jump { width: 92px; height: 92px; font-size: 17px; }
-  @media (hover: none) and (pointer: coarse) {
-    #touch { display: flex; }
+  #touch .jump { width: 84px; height: 84px; font-size: 16px; }
+  @media (hover: none) and (pointer: coarse) { #touch { display: flex; } }
+
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: 4px;
+    text-align: center; font-size: 12px; color: #5b6b8c;
+    pointer-events: none;
   }
+  @media (hover: none) and (pointer: coarse) { #hint { display: none; } }
+
+  /* ---------- 通用覆盖层 ---------- */
+  .overlay {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(6,10,22,.82);
+    z-index: 60;
+  }
+  .card {
+    width: min(86vw, 420px);
+    padding: 22px 22px 18px;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #18223a, #121a2c);
+    border: 1px solid rgba(120,160,255,.22);
+    box-shadow: 0 24px 70px rgba(0,0,0,.6);
+    text-align: center;
+    box-sizing: border-box;
+  }
+  .card .big { font-size: 20px; color: #e9f0ff; font-weight: 700; }
+  .card .sub { margin-top: 8px; font-size: 13px; line-height: 1.6; color: #93a4c4; }
+  .card .row { display: flex; gap: 10px; margin-top: 18px; }
+  .card .row button { flex: 1; height: 44px; }
+  button {
+    border-radius: 10px; border: 1px solid rgba(150,180,255,.28);
+    background: rgba(38,52,84,.9); color: #e2ebff;
+    font-size: 15px; font-family: inherit; cursor: pointer;
+  }
+  button.primary {
+    background: linear-gradient(180deg, #3f8ef7, #2b6ede);
+    border-color: #7fb4ff; font-weight: 700;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* ---------- 竖屏提示 ---------- */
+  #rotate { z-index: 70; }
+  #rotate .big { font-size: 22px; }
+
+  /* ---------- 广告遮罩 ---------- */
+  #adstage {
+    position: fixed; inset: 0; display: none;
+    align-items: center; justify-content: center;
+    background: #05070e; z-index: 80;
+  }
+  #adstage .adbox { text-align: center; width: min(86vw, 460px); }
+  #adstage .adlabel { font-size: 12px; color: #5f6f90; letter-spacing: .12em; }
+  #adstage .adcount { margin: 14px 0 6px; font-size: 42px; font-weight: 800; color: #ffd54f; }
+  #adstage .adnote { font-size: 13px; color: #93a4c4; }
+  #adstage button { margin-top: 22px; height: 44px; padding: 0 20px; min-width: 180px; }
 
   #err {
     position: fixed; left: 0; right: 0; top: 0; display: none;
@@ -52,13 +107,6 @@
     font-family: ui-monospace, Consolas, monospace;
     white-space: pre-wrap; z-index: 99;
   }
-
-  #hint {
-    position: fixed; left: 0; right: 0; bottom: 6px;
-    text-align: center; font-size: 12px; color: #5b6b8c;
-    pointer-events: none;
-  }
-  @media (hover: none) and (pointer: coarse) { #hint { display: none; } }
 </style>
 </head>
 <body>
@@ -76,6 +124,38 @@
   </div>
 
   <div id="hint">键盘：← → 移动 · 空格/↑ 跳跃 · 长按跳更高 · ↓+跳穿过单向平台 · R 重开</div>
+
+  <!-- 竖屏提示 -->
+  <div id="rotate" class="overlay">
+    <div class="card">
+      <div class="big">请把手机横过来</div>
+      <div class="sub">游戏按 960×540 横屏设计，竖屏会缩得很小。<br>横屏后画面会自动铺满。</div>
+      <div class="row"><button id="btn-fullscreen" class="primary">全屏并横屏</button></div>
+    </div>
+  </div>
+
+  <!-- 复活面板 -->
+  <div id="revive" class="overlay">
+    <div class="card">
+      <div class="big">摔倒了</div>
+      <div class="sub" id="revive-sub">看一段广告就能回到检查点继续，金币和进度都保留</div>
+      <div class="row">
+        <button id="btn-revive-ad" class="primary">看广告复活</button>
+        <button id="btn-revive-cp">直接重来</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 广告遮罩（演示广告；接真实联盟后由 SDK 接管） -->
+  <div id="adstage">
+    <div class="adbox">
+      <div class="adlabel">演示广告位 · 未接入广告联盟</div>
+      <div class="adcount" id="ad-count">15</div>
+      <div class="adnote" id="ad-note">广告播放完自动复活</div>
+      <button id="btn-ad-skip" disabled>5 秒后可跳过</button>
+    </div>
+  </div>
+
   <div id="err"></div>
 
   <script>
@@ -97,8 +177,20 @@
   <script src="vendor/phaser.min.js"></script>
   <script src="src/levels.js"></script>
   <script src="src/scenes.js"></script>
+
   <script>
+    /* =====================================================================
+       页面层：虚拟按键、竖屏提示、复活面板、广告适配层
+       广告接入：实现 window.AD_PROVIDER.showRewarded() 返回 Promise<boolean>
+       （true = 已完整观看，可发奖励）。默认走演示广告，不依赖任何 SDK。
+       ===================================================================== */
     (function () {
+      var EV = window.GAME_EVENTS;
+      var CFG = window.AD_CONFIG || {};
+      var rewardSeconds = CFG.rewardSeconds || 15;
+      var skipAfter = CFG.skipAfter || 5;
+
+      /* ---------- 触屏按键 ---------- */
       var touch = window.TOUCH;
       function bind(id, key) {
         var el = document.getElementById(id);
@@ -115,6 +207,117 @@
       bind('btn-right', 'right');
       bind('btn-jump', 'jump');
       bind('btn-down', 'down');
+
+      /* ---------- 竖屏检测 ---------- */
+      var rotate = document.getElementById('rotate');
+      var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      function updateRotate() {
+        var portrait = window.innerHeight > window.innerWidth * 1.05;
+        var narrow = Math.min(window.innerWidth, window.innerHeight) < 820;
+        rotate.style.display = (portrait && (isTouch || narrow)) ? 'flex' : 'none';
+      }
+      window.addEventListener('resize', updateRotate);
+      window.addEventListener('orientationchange', function () { setTimeout(updateRotate, 200); });
+      updateRotate();
+
+      document.getElementById('btn-fullscreen').addEventListener('click', function () {
+        var root = document.documentElement;
+        var p = (root.requestFullscreen && root.requestFullscreen()) || null;
+        var lock = function () {
+          try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape'); } catch (e) {}
+        };
+        if (p && p.then) p.then(lock).catch(lock); else lock();
+        setTimeout(updateRotate, 400);
+        setTimeout(updateRotate, 1200);
+      });
+
+      /* ---------- 复活面板 ---------- */
+      var revive = document.getElementById('revive');
+      var reviveSub = document.getElementById('revive-sub');
+      var adstage = document.getElementById('adstage');
+      var adCount = document.getElementById('ad-count');
+      var adNote = document.getElementById('ad-note');
+      var adSkip = document.getElementById('btn-ad-skip');
+      var adTimer = null;
+
+      function hideAll() {
+        revive.style.display = 'none';
+        adstage.style.display = 'none';
+        if (adTimer) { clearInterval(adTimer); adTimer = null; }
+      }
+
+      if (EV) {
+        EV.on('player:dead', function (d) {
+          if (d && d.revivesLeft > 0) {
+            reviveSub.innerHTML = '看一段广告就能回到检查点继续，金币和进度都保留<br>本关还剩 <b>' +
+              d.revivesLeft + '</b> 次广告复活机会';
+            revive.style.display = 'flex';
+          }
+        });
+        EV.on('ui:close', hideAll);
+      }
+
+      function finishRevive(ok) {
+        hideAll();
+        if (EV) EV.emit(ok ? 'player:revive' : 'player:respawn');
+      }
+
+      /* 演示广告：倒计时 + 可跳过。真实接入时由下方 provider 分支接管 */
+      function runDemoAd() {
+        hideAll();
+        adstage.style.display = 'flex';
+        var left = rewardSeconds;
+        adCount.textContent = left;
+        adSkip.disabled = true;
+        adSkip.textContent = skipAfter + ' 秒后可跳过';
+        adTimer = setInterval(function () {
+          left -= 1;
+          adCount.textContent = left > 0 ? left : 0;
+          if (rewardSeconds - left >= skipAfter) {
+            adSkip.disabled = false;
+            adSkip.textContent = '跳过广告并复活';
+          }
+          if (left <= 0) { clearInterval(adTimer); adTimer = null; finishRevive(true); }
+        }, 1000);
+      }
+
+      function showAd() {
+        if (window.AD_PROVIDER && typeof window.AD_PROVIDER.showRewarded === 'function') {
+          hideAll();
+          adstage.style.display = 'flex';
+          adCount.textContent = '…';
+          adNote.textContent = '正在请求激励视频…';
+          adSkip.style.display = 'none';
+          Promise.resolve(window.AD_PROVIDER.showRewarded()).then(function (ok) {
+            adSkip.style.display = '';
+            finishRevive(ok !== false);
+          }).catch(function () {
+            adSkip.style.display = '';
+            runDemoAd();
+          });
+          return;
+        }
+        runDemoAd();
+      }
+
+      document.getElementById('btn-revive-ad').addEventListener('click', showAd);
+      document.getElementById('btn-revive-cp').addEventListener('click', function () { finishRevive(false); });
+      adSkip.addEventListener('click', function () {
+        if (adSkip.disabled) return;
+        finishRevive(true);
+      });
+
+      /* 暴露给自动化测试 / 调试 */
+      window.__UI__ = {
+        updateRotate: updateRotate,
+        isRevivePanelOpen: function () { return revive.style.display === 'flex'; },
+        isAdPlaying: function () { return adstage.style.display === 'flex'; },
+        adSkipEnabled: function () { return !adSkip.disabled; },
+        clickReviveAd: function () { document.getElementById('btn-revive-ad').click(); },
+        clickReviveCheckpoint: function () { document.getElementById('btn-revive-cp').click(); },
+        clickAdSkip: function () { adSkip.click(); },
+        finishRevive: finishRevive
+      };
     })();
   </script>
 </body>

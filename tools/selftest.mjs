@@ -88,6 +88,7 @@ const STATE = `if (!s || !s.player) return { ready: false };
     vx: s.player.body.velocity.x, vy: s.player.body.velocity.y,
     onFloor: !!(s.player.body.blocked.down || s.player.body.touching.down),
     coins: s.registry.get('coins'), deaths: s.registry.get('deaths'),
+    revivesLeft: s.registry.get('revivesLeft'),
     level: s.levelIndex, dead: s.isDead, done: s.completed };`;
 
 async function shot(c, name) {
@@ -170,15 +171,46 @@ try {
   const coinAfter = (await evalJSON(client, STATE)).coins;
   check('碰到金币计数 +1', coinAfter === coinBefore + 1, `${coinBefore} → ${coinAfter}`);
 
-  /* 5. 掉进坑（第一关 760~900 是空隙）→ 死亡 + 检查点重生 */
+  /* 5. 掉进坑（第一关 760~900 是空隙）→ 死亡 → 广告复活面板 */
+  const UI = `return { panel: window.__UI__.isRevivePanelOpen(), ad: window.__UI__.isAdPlaying(), skip: window.__UI__.adSkipEnabled(), revives: s.registry.get('revivesLeft') };`;
+  const coinNow = (await evalJSON(client, STATE)).coins;
   const deathBefore = (await evalJSON(client, STATE)).deaths;
   await evalJSON(client, `s.player.setPosition(830, 300); s.player.body.reset(830, 300); return {};`);
-  await sleep(1800);
+  await sleep(1600);
   const afterDeath = await evalJSON(client, STATE);
+  const ui1 = await evalJSON(client, UI);
   check('掉坑触发死亡计数', afterDeath.deaths === deathBefore + 1, `deaths ${deathBefore} → ${afterDeath.deaths}`);
-  check('死亡后重生回起点', Math.abs(afterDeath.x - 90) < 40, `x=${Math.round(afterDeath.x)}（检查点未激活，应回 90）`);
+  check('死亡弹出广告复活面板', ui1.panel === true && afterDeath.dead === true, `panel=${ui1.panel} isDead=${afterDeath.dead}`);
+  check('面板显示本关剩余复活次数', ui1.revives === 2, `revivesLeft=${ui1.revives}`);
+  console.log('截图:', await shot(client, '05-revive-panel'));
 
-  /* 6. 检查点：走到检查点 → 存点 → 再死一次应回检查点 */
+  /* 6. 看广告复活：点按钮 → 广告播放 → 可跳过 → 跳过 → 复活 */
+  await evalJSON(client, `window.__UI__.clickReviveAd(); return {};`);
+  await sleep(300);
+  const ui2 = await evalJSON(client, UI);
+  check('点击后进入广告播放', ui2.ad === true && ui2.panel === false, `ad=${ui2.ad}`);
+  console.log('截图:', await shot(client, '06-ad-playing'));
+
+  let skipReady = false;
+  for (let i = 0; i < 14; i++) {
+    const u = await evalJSON(client, UI);
+    if (u.skip) { skipReady = true; break; }
+    await sleep(500);
+  }
+  check('广告 5 秒后出现跳过按钮', skipReady, skipReady ? '已可跳过' : '6 秒内未解禁');
+
+  await evalJSON(client, `window.__UI__.clickAdSkip(); return {};`);
+  await sleep(900);
+  const revived = await evalJSON(client, STATE);
+  const ui3 = await evalJSON(client, UI);
+  check('看完广告复活成功', revived.dead === false && !ui3.ad && !ui3.panel, `isDead=${revived.dead}`);
+  check('复活回到起点（未激活检查点）', Math.abs(revived.x - 90) < 40, `x=${Math.round(revived.x)}`);
+  check('复活保留金币', revived.coins === coinNow, `coins=${revived.coins}（复活前 ${coinNow}）`);
+  check('复活消耗一次机会', revived.revivesLeft === 1, `revivesLeft=${revived.revivesLeft}`);
+  const inv = await evalJSON(client, `return { invincible: s.invincibleUntil > s.time.now };`);
+  check('复活后有无敌时间', inv.invincible === true, `剩余 ${Math.round((await evalJSON(client, `return { ms: s.invincibleUntil - s.time.now };`)).ms)} ms`);
+
+  /* 7. 检查点 + 第二次死亡走"直接重来" */
   await evalJSON(client, `s.player.setPosition(1700, 470); s.player.body.reset(1700, 470); return {};`);
   await sleep(500);
   const cpOk = await evalJSON(client, `const v = s.registry.get('spawn_' + s.levelIndex); return { saved: v ? Math.round(v.x) : null };`);
@@ -186,8 +218,13 @@ try {
 
   await evalJSON(client, `s.player.setPosition(830, 300); s.player.body.reset(830, 300); return {};`);
   await sleep(1800);
+  const ui4 = await evalJSON(client, UI);
+  check('第二次死亡仍给复活机会', ui4.panel === true && ui4.revives === 1, `panel=${ui4.panel} revivesLeft=${ui4.revives}`);
+
+  await evalJSON(client, `window.__UI__.clickReviveCheckpoint(); return {};`);
+  await sleep(1200);
   const respawn = await evalJSON(client, STATE);
-  check('死后从检查点重生', Math.abs(respawn.x - 1700) < 60, `x=${Math.round(respawn.x)}（期望 ~1700）`);
+  check('选择直接重来后从检查点重生', Math.abs(respawn.x - 1700) < 60, `x=${Math.round(respawn.x)}（期望 ~1700）`);
 
   const file1 = await shot(client, '01-gameplay');
   console.log('截图:', file1);
@@ -200,7 +237,27 @@ try {
   const file2 = await shot(client, '02-level2');
   console.log('截图:', file2);
 
-  /* 8. 无脚本错误 */
+  /* 9. 自适应：横屏铺满高度、竖屏给出旋转提示 */
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
+  await sleep(700);
+  const land = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight,
+      rotate: document.getElementById('rotate').style.display };`);
+  check('横屏：画布铺满屏幕高度', Math.abs(land.h - land.vh) <= 6, `${land.w}x${land.h} / 视口 ${land.vw}x${land.vh}`);
+  check('横屏：保持 16:9 不裁切画面', Math.abs(land.w / land.h - 16 / 9) < 0.05, `实际比例 ${(land.w / land.h).toFixed(3)}（目标 1.778）`);
+  check('横屏：不显示旋转提示', land.rotate === 'none', `rotate=${land.rotate}`);
+  const fileLand = await shot(client, '03-landscape-844x390');
+  console.log('截图:', fileLand);
+
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  await sleep(700);
+  const port = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), rotate: document.getElementById('rotate').style.display };`);
+  check('竖屏：弹出"请把手机横过来"提示', port.rotate === 'flex', `rotate=${port.rotate} 画布 ${port.w}x${port.h}`);
+  const filePort = await shot(client, '04-portrait-390x844');
+  console.log('截图:', filePort);
+
+  /* 10. 无脚本错误 */
   const errText = await evalJSON(client, `return { text: window.__ERR__ || null };`);
   check('页面无运行时错误浮层', errText.text === null, errText.text || '无');
 } catch (e) {

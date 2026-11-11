@@ -26,6 +26,18 @@ const FONT = { fontFamily: 'system-ui, "Segoe UI", "Microsoft YaHei", sans-serif
 
 window.TOUCH = window.TOUCH || { left: false, right: false, jump: false, down: false };
 
+/* 激励视频复活配置。接真实广告联盟时：把 provider 改成 'custom'，
+   并提供 window.AD_PROVIDER = { showRewarded() => Promise<boolean> }。 */
+window.AD_CONFIG = window.AD_CONFIG || {
+  provider: 'demo',          // demo = 演示广告；custom = 由页面注入的 AD_PROVIDER 接管
+  rewardSeconds: 15,         // 演示广告时长（秒）
+  skipAfter: 5,              // 多少秒后可跳过
+  maxRevivesPerLevel: 2      // 每关最多几次广告复活
+};
+
+/* 页面 UI 与场景之间的桥（复活面板、广告遮罩都由 DOM 画，逻辑在场景里） */
+window.GAME_EVENTS = window.GAME_EVENTS || new Phaser.Events.EventEmitter();
+
 /* ------------------------------- 标题场景 ------------------------------- */
 class TitleScene extends Phaser.Scene {
   constructor() { super('title'); }
@@ -79,7 +91,10 @@ class TitleScene extends Phaser.Scene {
     this.started = true;
     this.registry.set('coins', 0);
     this.registry.set('deaths', 0);
-    LEVELS.forEach((_, i) => this.registry.set('spawn_' + i, null));
+    LEVELS.forEach((_, i) => {
+      this.registry.set('spawn_' + i, null);
+      this.registry.set('revives_' + i, 0);
+    });
     this.scene.stop('hud');
     this.scene.start('play', { level: idx });
   }
@@ -89,7 +104,10 @@ class TitleScene extends Phaser.Scene {
     this.started = true;
     this.registry.set('coins', 0);
     this.registry.set('deaths', 0);
-    LEVELS.forEach((_, i) => this.registry.set('spawn_' + i, null));
+    LEVELS.forEach((_, i) => {
+      this.registry.set('spawn_' + i, null);
+      this.registry.set('revives_' + i, 0);
+    });
     this.scene.stop('hud');
     this.scene.start('play', { level: 0 });
   }
@@ -105,21 +123,26 @@ class HudScene extends Phaser.Scene {
     this.levelText = this.add.text(18, 14, '', style);
     this.coinText = this.add.text(VIEW.W - 18, 14, '', style).setOrigin(1, 0);
     this.deathText = this.add.text(VIEW.W - 18, 38, '', { ...FONT, fontSize: '13px', color: '#8b9ab8' }).setOrigin(1, 0);
+    this.reviveText = this.add.text(VIEW.W - 18, 58, '', { ...FONT, fontSize: '13px', color: '#ffd54f' }).setOrigin(1, 0);
 
     const paint = () => {
       this.levelText.setText(this.registry.get('levelName') || '');
       this.coinText.setText('金币 ' + (this.registry.get('coins') || 0));
       this.deathText.setText('阵亡 ' + (this.registry.get('deaths') || 0));
+      const left = this.registry.get('revivesLeft');
+      this.reviveText.setText(left === undefined ? '' : '广告复活 ' + left + ' 次');
     };
     paint();
 
     this.registry.events.on('changedata-coins', paint);
     this.registry.events.on('changedata-deaths', paint);
     this.registry.events.on('changedata-levelName', paint);
+    this.registry.events.on('changedata-revivesLeft', paint);
     this.events.once('shutdown', () => {
       this.registry.events.off('changedata-coins', paint);
       this.registry.events.off('changedata-deaths', paint);
       this.registry.events.off('changedata-levelName', paint);
+      this.registry.events.off('changedata-revivesLeft', paint);
     });
   }
 }
@@ -139,12 +162,15 @@ class PlayScene extends Phaser.Scene {
     this.wasOnFloor = false;
     this.prevJump = false;
     this.facing = 1;
+    this.invincibleUntil = 0;
+    this.deathPos = null;
   }
 
   create() {
     const L = LEVELS[this.levelIndex];
     this.level = L;
     this.registry.set('levelName', L.name);
+    this.registry.set('revivesLeft', this.revivesLeft());
 
     this.solids = [];
     this.oneWay = [];
@@ -177,6 +203,17 @@ class PlayScene extends Phaser.Scene {
 
     if (!this.scene.isActive('hud')) this.scene.launch('hud');
     this.scene.bringToTop('hud');
+
+    /* 复活面板 / 广告走 DOM，这里只接收结果 */
+    this.onReviveEvt = () => this.doRevive();
+    this.onRespawnEvt = () => this.respawnNow();
+    window.GAME_EVENTS.on('player:revive', this.onReviveEvt);
+    window.GAME_EVENTS.on('player:respawn', this.onRespawnEvt);
+    this.events.once('shutdown', () => {
+      window.GAME_EVENTS.off('player:revive', this.onReviveEvt);
+      window.GAME_EVENTS.off('player:respawn', this.onRespawnEvt);
+      window.GAME_EVENTS.emit('ui:close');
+    });
 
     this.showLevelIntro();
   }
@@ -329,7 +366,10 @@ class PlayScene extends Phaser.Scene {
     if (this.keys.r.isDown && !this.isDead && !this.completed) {
       this.registry.set('coins', 0);
       this.registry.set('deaths', 0);
-      LEVELS.forEach((_, i) => this.registry.set('spawn_' + i, null));
+      LEVELS.forEach((_, i) => {
+        this.registry.set('spawn_' + i, null);
+        this.registry.set('revives_' + i, 0);
+      });
       this.scene.stop('hud');
       this.scene.start('title', { win: false });
       return;
@@ -462,16 +502,62 @@ class PlayScene extends Phaser.Scene {
 
   die() {
     if (this.isDead || this.completed) return;
+    if (this.time.now < this.invincibleUntil) return;   // 广告复活后的无敌时间
     this.isDead = true;
+    this.deathPos = { x: this.player.x, y: this.player.y };
     this.registry.set('deaths', (this.registry.get('deaths') || 0) + 1);
     this.cameras.main.shake(160, 0.012);
     this.cameras.main.flash(140, 220, 60, 60);
     this.player.setFillStyle(0xff5252, 1);
     this.physics.pause();
-    this.time.delayedCall(620, () => {
-      this.physics.resume();
-      this.scene.restart({ level: this.levelIndex });
+
+    const left = this.revivesLeft();
+    if (left > 0) {
+      /* 还有广告复活机会：交给 DOM 面板，用户选看广告或直接重来 */
+      window.GAME_EVENTS.emit('player:dead', { revivesLeft: left, levelName: this.level.name });
+    } else {
+      this.time.delayedCall(620, () => this.respawnNow());
+    }
+  }
+
+  revivesUsed() { return this.registry.get('revives_' + this.levelIndex) || 0; }
+
+  revivesLeft() {
+    const max = (window.AD_CONFIG && window.AD_CONFIG.maxRevivesPerLevel) || 0;
+    return Math.max(0, max - this.revivesUsed());
+  }
+
+  /* 看完广告：回到检查点（没激活就用出生点）继续，金币与本关进度保留 */
+  doRevive() {
+    if (!this.isDead) return;
+    const spawn = this.registry.get('spawn_' + this.levelIndex) || this.level.spawn;
+    this.isDead = false;
+    this.registry.set('revives_' + this.levelIndex, this.revivesUsed() + 1);
+    this.registry.set('revivesLeft', this.revivesLeft());
+
+    this.player.setFillStyle(C.player, 1);
+    this.player.setAlpha(1);
+    this.player.setPosition(spawn.x, spawn.y - 24);
+    this.player.body.reset(spawn.x, spawn.y - 24);
+    this.eye.setPosition(spawn.x + this.facing * 7, spawn.y - 28);
+
+    this.wasOnFloor = false;
+    this.coyoteTimer = 0;
+    this.bufferTimer = 0;
+    this.invincibleUntil = this.time.now + 2200;
+    this.physics.resume();
+    this.cameras.main.flash(160, 120, 255, 180);
+    this.tweens.add({
+      targets: this.player, alpha: 0.3, duration: 170, yoyo: true, repeat: 6,
+      onComplete: () => this.player.setAlpha(1)
     });
+    window.GAME_EVENTS.emit('ui:close');
+  }
+
+  respawnNow() {
+    this.physics.resume();
+    window.GAME_EVENTS.emit('ui:close');
+    this.scene.restart({ level: this.levelIndex });
   }
 
   reachGoal() {
