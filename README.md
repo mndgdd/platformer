@@ -6,7 +6,9 @@
 
 ## 在线试玩
 
-> 部署后把地址写在这里：`https://mndgdd.github.io/platformer/`
+**https://mndgdd.github.io/platformer/**
+
+直达关卡：`?play=1` / `?play=2` / `?play=3`（跳过标题直接进对应关卡）
 
 ## 操作
 

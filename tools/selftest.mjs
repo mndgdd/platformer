@@ -11,7 +11,7 @@ import os from 'node:os';
 
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const PORT = 9333;
-const PAGE_URL = 'file:///D:/github/platformer/index.html?play=1';
+const PAGE_URL = process.argv[2] || 'file:///D:/github/platformer/index.html?play=1';
 const OUT_DIR = 'D:\\github\\platformer\\_selftest';
 
 const udd = fs.mkdtempSync(path.join(os.tmpdir(), 'pchrome-'));
@@ -27,7 +27,7 @@ async function waitForTarget() {
   for (let i = 0; i < 60; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
-      const page = list.find((t) => t.type === 'page' && t.url.includes('index.html'));
+      const page = list.find((t) => t.type === 'page' && !t.url.startsWith('about:') && !t.url.startsWith('chrome'));
       if (page) return page;
     } catch { /* 还没起来 */ }
     await sleep(250);
@@ -75,7 +75,7 @@ async function keyUp(c, code) {
 
 async function evalJSON(c, expr) {
   const r = await c.send('Runtime.evaluate', {
-    expression: `JSON.stringify((() => { const s = window.GAME.scene.getScene('play'); ${expr} })())`,
+    expression: `JSON.stringify((() => { const s = window.GAME ? window.GAME.scene.getScene('play') : null; ${expr} })())`,
     returnByValue: true, awaitPromise: true
   });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + ' / ' + (r.exceptionDetails.exception?.description || ''));
@@ -113,9 +113,16 @@ try {
   await client.ready;
   await client.send('Page.enable');
   await client.send('Runtime.enable');
-  await sleep(1200);
 
-  let st = await evalJSON(client, STATE);
+  /* 等待 Phaser 加载完、play 场景创建好（线上地址要等 1.3MB 引擎下载） */
+  let st = null;
+  for (let i = 0; i < 40; i++) {
+    st = await evalJSON(client, STATE).catch(() => null);
+    if (st && st.ready) break;
+    await sleep(500);
+  }
+  await sleep(400);
+  st = await evalJSON(client, STATE);
   check('场景启动', !!st && st.ready, st ? `level=${st.level} x=${Math.round(st.x)} y=${Math.round(st.y)}` : 'play 场景未就绪');
   if (!st || !st.ready) throw new Error('游戏未启动');
 
