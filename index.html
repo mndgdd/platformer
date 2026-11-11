@@ -8,7 +8,7 @@
   :root { color-scheme: dark; }
   html, body {
     margin: 0; padding: 0; height: 100%; width: 100%;
-    background: #0b1020;
+    background: radial-gradient(120% 90% at 50% 12%, #1b2440 0%, #0f1424 55%, #0b0f1c 100%);
     font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
     overflow: hidden;
     -webkit-tap-highlight-color: transparent;
@@ -84,9 +84,20 @@
   }
   button:disabled { opacity: .5; cursor: default; }
 
-  /* ---------- 竖屏提示 ---------- */
-  #rotate { z-index: 70; }
-  #rotate .big { font-size: 22px; }
+  /* ---------- 竖屏自适应 ----------
+     竖屏不再拦截：画布按宽度铺满、上下同色底，触控键在手边；
+     另给一个不挡屏的小胶囊按钮，点了才尝试全屏+锁横屏。 */
+  body.portrait #game canvas { border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,.55), 0 0 0 1px rgba(120,160,255,.14); }
+  body.portrait #touch { padding-bottom: calc(14px + env(safe-area-inset-bottom)); }
+  #rotate-pill {
+    position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 10px;
+    display: none; align-items: center; gap: 4px;
+    height: 30px; padding: 0 12px; border-radius: 999px;
+    font-size: 12px; color: #cfe0ff;
+    background: rgba(20,30,52,.82); border: 1px solid rgba(120,160,255,.28);
+    backdrop-filter: blur(6px); z-index: 46; opacity: .92;
+  }
+  #rotate-pill:active { background: rgba(63,142,247,.45); }
 
   /* ---------- 广告遮罩 ---------- */
   #adstage {
@@ -125,14 +136,8 @@
 
   <div id="hint">键盘：← → 移动 · 空格/↑ 跳跃 · 长按跳更高 · ↓+跳穿过单向平台 · R 重开</div>
 
-  <!-- 竖屏提示 -->
-  <div id="rotate" class="overlay">
-    <div class="card">
-      <div class="big">竖屏无法游玩，请横屏</div>
-      <div class="sub">游戏只支持横屏（16:9）。横过来后画面自动铺满，竖屏时已暂停。</div>
-      <div class="row"><button id="btn-fullscreen" class="primary">全屏并横屏</button></div>
-    </div>
-  </div>
+  <!-- 竖屏：不拦截，只给一个不挡屏的小按钮 -->
+  <button id="rotate-pill">⤢ 横屏更爽</button>
 
   <!-- 复活面板 -->
   <div id="revive" class="overlay">
@@ -208,32 +213,28 @@
       bind('btn-jump', 'jump');
       bind('btn-down', 'down');
 
-      /* ---------- 竖屏一律不给玩：隐藏舞台并停掉游戏循环，只留"请横屏" ---------- */
-      var rotate = document.getElementById('rotate');
+      /* ---------- 竖屏自适应（不再拦截竖屏） ---------- */
+      var pill = document.getElementById('rotate-pill');
       var stage = document.getElementById('stage');
       var hint = document.getElementById('hint');
-      var loopSleeping = false;
       var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+      var portraitNow = false;
       function updateRotate() {
         var portrait = window.innerHeight > window.innerWidth * 1.05;
         var narrow = Math.min(window.innerWidth, window.innerHeight) < 820;
-        var block = portrait && (isTouch || narrow);
-        rotate.style.display = block ? 'flex' : 'none';
-        stage.style.visibility = block ? 'hidden' : 'visible';
-        if (hint) hint.style.visibility = block ? 'hidden' : 'visible';
-        try {
-          if (window.GAME && window.GAME.loop) {
-            if (block && !loopSleeping) { window.GAME.loop.sleep(); loopSleeping = true; }
-            else if (!block && loopSleeping) { window.GAME.loop.wake(); loopSleeping = false; }
-          }
-        } catch (e) {}
+        portraitNow = portrait && (isTouch || narrow);
+        document.body.classList.toggle('portrait', portraitNow);
+        stage.style.visibility = 'visible';
+        if (hint) hint.style.visibility = portraitNow ? 'hidden' : 'visible';
+        pill.style.display = portraitNow ? 'inline-flex' : 'none';
+        /* 尺寸重算交给 Phaser 自己的 Scale 管理器（额外调 refresh 会拿到旧尺寸） */
       }
       window.addEventListener('resize', updateRotate);
       window.addEventListener('orientationchange', function () { setTimeout(updateRotate, 200); });
       updateRotate();
       window.addEventListener('load', function () { setTimeout(updateRotate, 300); });
 
-      document.getElementById('btn-fullscreen').addEventListener('click', function () {
+      pill.addEventListener('click', function () {
         var root = document.documentElement;
         var p = (root.requestFullscreen && root.requestFullscreen()) || null;
         var lock = function () {
@@ -323,7 +324,8 @@
       /* 暴露给自动化测试 / 调试 */
       window.__UI__ = {
         updateRotate: updateRotate,
-        stageHidden: function () { return stage.style.visibility === 'hidden'; },
+        isPortrait: function () { return portraitNow; },
+        pillVisible: function () { return pill.style.display !== 'none'; },
         isRevivePanelOpen: function () { return revive.style.display === 'flex'; },
         isAdPlaying: function () { return adstage.style.display === 'flex'; },
         adSkipEnabled: function () { return !adSkip.disabled; },

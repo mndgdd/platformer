@@ -24,6 +24,15 @@ const C = {
 
 const FONT = { fontFamily: 'system-ui, "Segoe UI", "Microsoft YaHei", sans-serif' };
 
+/* 竖屏时画布只有 960×540 被压成 ~390×219（0.41 倍），字会小到看不清，
+   所以界面文字按比例放大，让屏幕上的实际字号回到可读区间。 */
+const PORTRAIT_UI_SCALE = 1.9;
+function uiK() {
+  try {
+    return (window.__UI__ && window.__UI__.isPortrait && window.__UI__.isPortrait()) ? PORTRAIT_UI_SCALE : 1;
+  } catch (e) { return 1; }
+}
+
 window.TOUCH = window.TOUCH || { left: false, right: false, jump: false, down: false };
 
 /* 激励视频复活配置。接真实广告联盟时：把 provider 改成 'custom'，
@@ -48,29 +57,33 @@ class TitleScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(C.sky);
     this.input.enabled = true;
 
+    const isP = !!(window.__UI__ && window.__UI__.isPortrait && window.__UI__.isPortrait());
+    const px = (n) => Math.round(n * (isP ? 1.25 : 1)) + 'px';    /* 标题：放大但要放得进 960 宽 */
+    const ps = (n) => Math.round(n * (isP ? 1.15 : 1)) + 'px';   /* 副标题/说明：小幅放大，防止横向溢出 */
+
     this.add.text(VIEW.W / 2, 132, '平台跳跃 · 像素远征', {
-      ...FONT, fontSize: '44px', color: '#e9f0ff', fontStyle: 'bold'
+      ...FONT, fontSize: px(44), color: '#e9f0ff', fontStyle: 'bold'
     }).setOrigin(0.5);
 
     this.add.text(VIEW.W / 2, 188, LEVELS.length + ' 关 · 金币 · 尖刺 · 巡逻敌人 · 广告复活', {
-      ...FONT, fontSize: '18px', color: '#9fb0d0'
+      ...FONT, fontSize: ps(18), color: '#9fb0d0'
     }).setOrigin(0.5);
 
     if (this.result.win) {
       this.add.text(VIEW.W / 2, 244, `通关！金币 ${this.result.coins || 0} · 阵亡 ${this.result.deaths || 0} 次`, {
-        ...FONT, fontSize: '22px', color: '#8ce99a'
+        ...FONT, fontSize: ps(22), color: '#8ce99a'
       }).setOrigin(0.5);
     }
 
     this.add.text(VIEW.W / 2, 318, '← → / A D 移动　　空格 / ↑ / W 跳跃　　长按跳更高', {
-      ...FONT, fontSize: '17px', color: '#c7d3ea'
+      ...FONT, fontSize: ps(17), color: '#c7d3ea'
     }).setOrigin(0.5);
     this.add.text(VIEW.W / 2, 350, '↓ + 跳 穿过浅色单向平台　　碰尖刺或敌人回检查点　　R 重开', {
-      ...FONT, fontSize: '15px', color: '#8b9ab8'
+      ...FONT, fontSize: ps(15), color: '#8b9ab8'
     }).setOrigin(0.5);
 
     const hint = this.add.text(VIEW.W / 2, 438, '按 空格 / 点击屏幕 开始', {
-      ...FONT, fontSize: '20px', color: '#ffd54f'
+      ...FONT, fontSize: ps(20), color: '#ffd54f'
     }).setOrigin(0.5);
     this.tweens.add({ targets: hint, alpha: 0.35, duration: 700, yoyo: true, repeat: -1 });
 
@@ -119,11 +132,24 @@ class HudScene extends Phaser.Scene {
   constructor() { super('hud'); }
 
   create() {
-    const style = { ...FONT, fontSize: '16px', color: '#e9f0ff' };
-    this.levelText = this.add.text(18, 14, '', style);
-    this.coinText = this.add.text(VIEW.W - 18, 14, '', style).setOrigin(1, 0);
-    this.deathText = this.add.text(VIEW.W - 18, 38, '', { ...FONT, fontSize: '13px', color: '#8b9ab8' }).setOrigin(1, 0);
-    this.reviveText = this.add.text(VIEW.W - 18, 58, '', { ...FONT, fontSize: '13px', color: '#ffd54f' }).setOrigin(1, 0);
+    const px = (n) => Math.round(n * uiK()) + 'px';
+    const mx = () => Math.round(18 * uiK());
+    const y2 = Math.round(14 + 26 * uiK());
+    const y3 = Math.round(14 + 48 * uiK());
+
+    this.levelText = this.add.text(mx(), 14, '', { ...FONT, fontSize: px(16), color: '#e9f0ff' });
+    this.coinText = this.add.text(VIEW.W - mx(), 14, '', { ...FONT, fontSize: px(16), color: '#e9f0ff' }).setOrigin(1, 0);
+    this.deathText = this.add.text(VIEW.W - mx(), y2, '', { ...FONT, fontSize: px(13), color: '#8b9ab8' }).setOrigin(1, 0);
+    this.reviveText = this.add.text(VIEW.W - mx(), y3, '', { ...FONT, fontSize: px(13), color: '#ffd54f' }).setOrigin(1, 0);
+
+    /* 转屏后字号跟着重算（竖屏放大到屏幕上仍可读） */
+    const applySize = () => {
+      this.levelText.setFontSize(px(16)).setX(mx());
+      this.coinText.setFontSize(px(16)).setX(VIEW.W - mx());
+      this.deathText.setFontSize(px(13)).setX(VIEW.W - mx()).setY(Math.round(14 + 26 * uiK()));
+      this.reviveText.setFontSize(px(13)).setX(VIEW.W - mx()).setY(Math.round(14 + 48 * uiK()));
+    };
+    window.addEventListener('resize', applySize);
 
     const paint = () => {
       this.levelText.setText(this.registry.get('levelName') || '');
@@ -139,6 +165,7 @@ class HudScene extends Phaser.Scene {
     this.registry.events.on('changedata-levelName', paint);
     this.registry.events.on('changedata-revivesLeft', paint);
     this.events.once('shutdown', () => {
+      window.removeEventListener('resize', applySize);
       this.registry.events.off('changedata-coins', paint);
       this.registry.events.off('changedata-deaths', paint);
       this.registry.events.off('changedata-levelName', paint);

@@ -254,27 +254,39 @@ try {
   const file2 = await shot(client, '02-level2');
   console.log('截图:', file2);
 
-  /* 9. 自适应：横屏铺满高度、竖屏给出旋转提示 */
+  /* 9. 自适应：横屏铺满高度；竖屏也自适应（按宽度铺满、可玩、不拦截） */
   await client.send('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 1, mobile: true });
   await sleep(700);
   const land = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
     return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight,
-      rotate: document.getElementById('rotate').style.display };`);
+      pill: document.getElementById('rotate-pill').style.display,
+      portrait: window.__UI__.isPortrait() };`);
   check('横屏：画布铺满屏幕高度', Math.abs(land.h - land.vh) <= 6, `${land.w}x${land.h} / 视口 ${land.vw}x${land.vh}`);
   check('横屏：保持 16:9 不裁切画面', Math.abs(land.w / land.h - 16 / 9) < 0.05, `实际比例 ${(land.w / land.h).toFixed(3)}（目标 1.778）`);
-  check('横屏：不显示旋转提示', land.rotate === 'none', `rotate=${land.rotate}`);
-  const landHidden = await evalJSON(client, `return { hidden: window.__UI__.stageHidden() };`);
-  check('横屏：游戏舞台可见', landHidden.hidden === false, `stageHidden=${landHidden.hidden}`);
+  check('横屏：不显示"横屏更爽"按钮', land.pill === 'none', `pill=${land.pill}`);
+  const landPill = await evalJSON(client, `return { portrait: window.__UI__.isPortrait() };`);
+  check('横屏：不被判定为竖屏', landPill.portrait === false, `isPortrait=${landPill.portrait}`);
   const fileLand = await shot(client, '03-landscape-844x390');
   console.log('截图:', fileLand);
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-  await sleep(700);
+  await sleep(800);
   const port = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
-    return { w: Math.round(r.width), h: Math.round(r.height), rotate: document.getElementById('rotate').style.display,
-      hidden: window.__UI__.stageHidden() };`);
-  check('竖屏：弹出"竖屏无法游玩，请横屏"提示', port.rotate === 'flex', `rotate=${port.rotate} 画布 ${port.w}x${port.h}`);
-  check('竖屏：游戏舞台隐藏（竖屏不给玩）', port.hidden === true, `stageHidden=${port.hidden}`);
+    return { w: Math.round(r.width), h: Math.round(r.height), vw: innerWidth, vh: innerHeight,
+      portrait: window.__UI__.isPortrait(), pill: document.getElementById('rotate-pill').style.display,
+      running: window.GAME.isRunning, x: s.player.x, level: s.levelIndex };`);
+  check('竖屏：画布按宽度铺满（不再缩成一条）', Math.abs(port.w - port.vw) <= 4, `画布 ${port.w}x${port.h} / 视口 ${port.vw}x${port.vh}`);
+  check('竖屏：仍保持 16:9 不裁切', Math.abs(port.w / port.h - 16 / 9) < 0.05, `实际比例 ${(port.w / port.h).toFixed(3)}`);
+  check('竖屏：面板不再拦截（不弹全屏遮罩）', port.portrait === true && port.pill !== 'none', `isPortrait=${port.portrait} pill=${port.pill}`);
+  check('竖屏：游戏仍在运行（不是暂停状态）', port.running === true, `GAME.isRunning=${port.running}`);
+
+  const portStart = port.x;
+  await keyDown(client, 'ArrowRight');
+  await sleep(600);
+  const portMoving = await evalJSON(client, STATE);
+  await keyUp(client, 'ArrowRight');
+  await sleep(250);
+  check('竖屏：按键可控（人在竖屏下能走）', portMoving.x - portStart > 60, `Δx=${Math.round(portMoving.x - portStart)} vx=${Math.round(portMoving.vx)}`);
   const filePort = await shot(client, '04-portrait-390x844');
   console.log('截图:', filePort);
 
