@@ -1,0 +1,5 @@
+_chromeprofile/
+_cp*/
+_smoke_*.png
+_selftest/
+node_modules/

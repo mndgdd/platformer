@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>平台跳跃 · 像素远征</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0b1020;
+    font-family: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  #stage {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #game { line-height: 0; }
+  #game canvas { border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+
+  /* 手机触控按钮：仅在触屏设备显示 */
+  #touch {
+    position: fixed; inset: auto 0 0 0;
+    display: none;
+    justify-content: space-between;
+    padding: 14px 18px calc(14px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    pointer-events: none;
+  }
+  #touch .pad { display: flex; gap: 12px; pointer-events: auto; }
+  #touch button {
+    width: 74px; height: 74px; border-radius: 50%;
+    border: 1px solid rgba(160,190,255,.35);
+    background: rgba(24,34,58,.78);
+    color: #dbe6ff; font-size: 20px; font-weight: 600;
+    user-select: none; -webkit-user-select: none;
+    backdrop-filter: blur(6px);
+  }
+  #touch button:active { background: rgba(79,195,247,.45); }
+  #touch .jump { width: 92px; height: 92px; font-size: 17px; }
+  @media (hover: none) and (pointer: coarse) {
+    #touch { display: flex; }
+  }
+
+  #err {
+    position: fixed; left: 0; right: 0; top: 0; display: none;
+    padding: 10px 14px; font-size: 13px; line-height: 1.5;
+    color: #ffd7d7; background: rgba(120,20,20,.92);
+    font-family: ui-monospace, Consolas, monospace;
+    white-space: pre-wrap; z-index: 99;
+  }
+
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: 6px;
+    text-align: center; font-size: 12px; color: #5b6b8c;
+    pointer-events: none;
+  }
+  @media (hover: none) and (pointer: coarse) { #hint { display: none; } }
+</style>
+</head>
+<body>
+  <div id="stage"><div id="game"></div></div>
+
+  <div id="touch">
+    <div class="pad">
+      <button id="btn-left" aria-label="向左">◀</button>
+      <button id="btn-right" aria-label="向右">▶</button>
+    </div>
+    <div class="pad">
+      <button id="btn-down" aria-label="下穿平台">▼</button>
+      <button id="btn-jump" class="jump" aria-label="跳跃">跳跃</button>
+    </div>
+  </div>
+
+  <div id="hint">键盘：← → 移动 · 空格/↑ 跳跃 · 长按跳更高 · ↓+跳穿过单向平台 · R 重开</div>
+  <div id="err"></div>
+
+  <script>
+    (function () {
+      var box = document.getElementById('err');
+      function show(msg) {
+        window.__ERR__ = String(msg);
+        box.style.display = 'block';
+        box.textContent = '运行错误：' + msg;
+      }
+      window.addEventListener('error', function (e) { show(e.message + ' @ ' + (e.filename || '') + ':' + (e.lineno || 0)); });
+      window.addEventListener('unhandledrejection', function (e) { show(String(e.reason)); });
+      window.addEventListener('load', function () {
+        if (!window.Phaser) show('Phaser 未加载，检查 vendor/phaser.min.js 是否存在');
+      });
+    })();
+  </script>
+
+  <script src="vendor/phaser.min.js"></script>
+  <script src="src/levels.js"></script>
+  <script src="src/scenes.js"></script>
+  <script>
+    (function () {
+      var touch = window.TOUCH;
+      function bind(id, key) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var on = function (e) { e.preventDefault(); touch[key] = true; };
+        var off = function (e) { e.preventDefault(); touch[key] = false; };
+        el.addEventListener('pointerdown', on);
+        el.addEventListener('pointerup', off);
+        el.addEventListener('pointercancel', off);
+        el.addEventListener('pointerleave', off);
+        el.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      }
+      bind('btn-left', 'left');
+      bind('btn-right', 'right');
+      bind('btn-jump', 'jump');
+      bind('btn-down', 'down');
+    })();
+  </script>
+</body>
+</html>
