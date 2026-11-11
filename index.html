@@ -211,6 +211,7 @@
       /* ---------- 竖屏一律不给玩：隐藏舞台并停掉游戏循环，只留"请横屏" ---------- */
       var rotate = document.getElementById('rotate');
       var stage = document.getElementById('stage');
+      var hint = document.getElementById('hint');
       var loopSleeping = false;
       var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
       function updateRotate() {
@@ -219,6 +220,7 @@
         var block = portrait && (isTouch || narrow);
         rotate.style.display = block ? 'flex' : 'none';
         stage.style.visibility = block ? 'hidden' : 'visible';
+        if (hint) hint.style.visibility = block ? 'hidden' : 'visible';
         try {
           if (window.GAME && window.GAME.loop) {
             if (block && !loopSleeping) { window.GAME.loop.sleep(); loopSleeping = true; }
