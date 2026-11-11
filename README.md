@@ -53,8 +53,45 @@ index.html              页面外壳 + 移动端虚拟按键 + 错误浮层
 src/levels.js           手感参数 FEEL、三关全部几何与道具坐标
 src/scenes.js           TitleScene / PlayScene / HudScene、控制器、GAME_CONFIG
 vendor/phaser.min.js    Phaser 4.2.0（本地化，不依赖 CDN）
-tools/selftest.mjs      CDP 冒烟测试：真按键驱动，验证 15 项核心行为
+tools/selftest.mjs      CDP 冒烟测试：真按键驱动，验证 28 项核心行为
 ```
+
+## 广告复活（变现位）
+
+死亡时不再直接重开：面板给出「看广告复活」和「直接重来」。看完广告回到检查点（未激活检查点则回出生点），**金币、本关进度、已激活检查点全部保留**，并有 2.2 秒无敌闪烁。
+
+参数在 `src/scenes.js` 顶部：
+
+```js
+window.AD_CONFIG = {
+  provider: 'demo',          // demo = 演示广告；custom = 交由 AD_PROVIDER 接管
+  rewardSeconds: 15,         // 演示广告时长
+  skipAfter: 5,              // 多少秒后可跳过
+  maxRevivesPerLevel: 2      // 每关最多几次复活（HUD 右上角显示剩余次数）
+};
+```
+
+**接真实激励视频**：在 `index.html` 里定义 `window.AD_PROVIDER`，页面检测到就会优先走它，失败自动回退演示广告。
+
+```js
+window.AD_PROVIDER = {
+  // 返回 true 表示完整观看，可以发奖励；false 表示没看完
+  showRewarded() {
+    return new Promise((resolve) => {
+      // 例：AdSense 激励广告 / 第三方 H5 广告联盟 SDK 的展示回调里 resolve(true)
+      myAdSdk.showRewardVideo({ adUnitId: 'xxx' }, (result) => resolve(result.isCompleted));
+    });
+  }
+};
+```
+
+注意 AdMob 只支持原生 App（Android/iOS），**H5 网页用不了**；网页端要用 AdSense 激励广告或支持 H5 的广告联盟。
+
+## 横屏自适应
+
+- 画布父容器撑满视口，`Phaser.Scale.FIT` 保持 16:9：横屏手机上高度铺满（844×390 实测画布 693×390，比例 1.777），宽屏桌面按高度铺满，多余方向留同色底，不裁画面。
+- 竖屏（且窄屏/触屏）时覆盖「请把手机横过来」，按钮会请求全屏并尝试 `screen.orientation.lock('landscape')`（浏览器不支持时仅全屏，横过来后提示自动消失）。
+- 窗口尺寸/旋转变化由 Scale Manager 自动重算，无需重载。
 
 ## 本地运行
 
@@ -69,7 +106,7 @@ tools/selftest.mjs      CDP 冒烟测试：真按键驱动，验证 15 项核心
 node tools/selftest.mjs
 ```
 
-用 Chrome DevTools Protocol 发真实按键事件，覆盖：场景启动、右移加速、速度上限、刹车、长按跳、点按切高度、吃金币、掉坑死亡、死亡回起点、检查点写入、检查点重生、进下一关、无运行时错误。当前 15/15 通过。
+用 Chrome DevTools Protocol 发真实按键事件，覆盖：场景启动、右移加速、速度上限、刹车、长按跳、点按切高度、吃金币、掉坑死亡、**广告复活面板弹出、广告播放与跳过、复活保留金币/消耗次数/无敌时间**、检查点写入、直接重来后从检查点重生、进下一关、**横屏铺满与 16:9 不裁切、竖屏旋转提示**、无运行时错误。当前 28/28 通过（file:// 与线上地址各跑一遍）。
 
 ## 关卡数据格式（`src/levels.js`）
 
