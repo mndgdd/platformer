@@ -226,10 +226,27 @@ try {
   const respawn = await evalJSON(client, STATE);
   check('选择直接重来后从检查点重生', Math.abs(respawn.x - 1700) < 60, `x=${Math.round(respawn.x)}（期望 ~1700）`);
 
+  /* 8. 200 关：总数 + 抽查（含最后一关） */
+  const total = await evalJSON(client, `return { n: LEVELS.length, total: typeof TOTAL_LEVELS === 'undefined' ? null : TOTAL_LEVELS };`);
+  check('关卡总数 = 200', total.n === 200 && total.total === 200, `LEVELS=${total.n} TOTAL_LEVELS=${total.total}`);
+
+  for (const n of [4, 50, 100, 150, 199, 200]) {
+    await evalJSON(client, `s.scene.restart({ level: ${n - 1} }); return {};`);
+    await sleep(500);
+    const st = await evalJSON(client, `return { level: s.levelIndex, x: s.player.x, y: s.player.y, dead: s.isDead,
+      name: s.level.name, width: s.level.width, hasGoal: !!s.goalZone, hasCheckpoint: !!s.checkpointZone };`);
+    check(`第 ${n} 关可加载、出生点安全、机关齐备`,
+      st.level === n - 1 && !st.dead && st.y < 480 && st.width > 1000 && st.hasGoal === true && st.hasCheckpoint === true,
+      `level=${st.level} x=${Math.round(st.x)} y=${Math.round(st.y)} w=${st.width}「${st.name}」`);
+  }
+
   const file1 = await shot(client, '01-gameplay');
   console.log('截图:', file1);
 
-  /* 7. 关卡推进：直接把玩家放到终点 → 应进第二关 */
+  /* 7. 关卡推进：先把场景复位到第一关（前面的 200 关抽查停在最后一关），
+       再把玩家放到终点 → 应进第二关 */
+  await evalJSON(client, `s.scene.restart({ level: 0 }); return {};`);
+  await sleep(500);
   await evalJSON(client, `const g = s.level.goal; s.player.setPosition(g.x, g.y - 30); s.player.body.reset(g.x, g.y - 30); return {};`);
   await sleep(1600);
   const nextLevel = await evalJSON(client, STATE);
@@ -246,14 +263,18 @@ try {
   check('横屏：画布铺满屏幕高度', Math.abs(land.h - land.vh) <= 6, `${land.w}x${land.h} / 视口 ${land.vw}x${land.vh}`);
   check('横屏：保持 16:9 不裁切画面', Math.abs(land.w / land.h - 16 / 9) < 0.05, `实际比例 ${(land.w / land.h).toFixed(3)}（目标 1.778）`);
   check('横屏：不显示旋转提示', land.rotate === 'none', `rotate=${land.rotate}`);
+  const landHidden = await evalJSON(client, `return { hidden: window.__UI__.stageHidden() };`);
+  check('横屏：游戏舞台可见', landHidden.hidden === false, `stageHidden=${landHidden.hidden}`);
   const fileLand = await shot(client, '03-landscape-844x390');
   console.log('截图:', fileLand);
 
   await client.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
   await sleep(700);
   const port = await evalJSON(client, `const r = document.querySelector('#game canvas').getBoundingClientRect();
-    return { w: Math.round(r.width), h: Math.round(r.height), rotate: document.getElementById('rotate').style.display };`);
-  check('竖屏：弹出"请把手机横过来"提示', port.rotate === 'flex', `rotate=${port.rotate} 画布 ${port.w}x${port.h}`);
+    return { w: Math.round(r.width), h: Math.round(r.height), rotate: document.getElementById('rotate').style.display,
+      hidden: window.__UI__.stageHidden() };`);
+  check('竖屏：弹出"竖屏无法游玩，请横屏"提示', port.rotate === 'flex', `rotate=${port.rotate} 画布 ${port.w}x${port.h}`);
+  check('竖屏：游戏舞台隐藏（竖屏不给玩）', port.hidden === true, `stageHidden=${port.hidden}`);
   const filePort = await shot(client, '04-portrait-390x844');
   console.log('截图:', filePort);
 

@@ -61,7 +61,7 @@ const LEVELS = [
     ],
     foes: [
       { x: 1000, y: GROUND_TOP - 14, from: 960, to: 1420, speed: 90 },
-      { x: 2500, y: GROUND_TOP - 14, from: 2380, to: 2740, speed: 110 }
+      { x: 2500, y: GROUND_TOP - 14, from: 2380, to: 2660, speed: 110 }
     ],
     checkpoint: { x: 1700, y: GROUND_TOP },
     goal: { x: 2720, y: GROUND_TOP }
@@ -70,7 +70,7 @@ const LEVELS = [
     name: '第二关 · 往上爬',
     width: 3200,
     spawn: { x: 90, y: GROUND_TOP - 40 },
-    ground: [[0, 620], [780, 1220], [1400, 1720], [1900, 2400], [2600, 3200]],
+    ground: [[0, 620], [780, 1240], [1400, 1740], [1900, 2400], [2560, 3200]],
     plat: [
       { x: 660, y: 392, w: 88 },
       { x: 900, y: 320, w: 96 },
@@ -96,7 +96,7 @@ const LEVELS = [
     ],
     foes: [
       { x: 900, y: GROUND_TOP - 14, from: 820, to: 1180, speed: 110 },
-      { x: 2300, y: GROUND_TOP - 14, from: 1960, to: 2360, speed: 120 },
+      { x: 2300, y: GROUND_TOP - 14, from: 2040, to: 2360, speed: 120 },
       { x: 2700, y: GROUND_TOP - 14, from: 2650, to: 3050, speed: 100 }
     ],
     checkpoint: { x: 1980, y: GROUND_TOP },
@@ -106,7 +106,7 @@ const LEVELS = [
     name: '第三关 · 综合',
     width: 3600,
     spawn: { x: 90, y: GROUND_TOP - 40 },
-    ground: [[0, 700], [880, 1340], [1520, 1900], [2100, 2560], [2760, 3600]],
+    ground: [[0, 720], [880, 1340], [1500, 1900], [2080, 2580], [2760, 3600]],
     plat: [
       { x: 620, y: 396, w: 96 },
       { x: 1000, y: 360, w: 112 },
@@ -137,11 +137,137 @@ const LEVELS = [
     ],
     foes: [
       { x: 950, y: GROUND_TOP - 14, from: 900, to: 1300, speed: 120 },
-      { x: 1700, y: GROUND_TOP - 14, from: 1560, to: 1860, speed: 130 },
-      { x: 2200, y: GROUND_TOP - 14, from: 2160, to: 2520, speed: 140 },
-      { x: 3300, y: GROUND_TOP - 14, from: 2800, to: 3560, speed: 110 }
+      { x: 1750, y: GROUND_TOP - 14, from: 1640, to: 1860, speed: 130 },
+      { x: 2300, y: GROUND_TOP - 14, from: 2160, to: 2520, speed: 140 },
+      { x: 3100, y: GROUND_TOP - 14, from: 2800, to: 3400, speed: 110 }
     ],
     checkpoint: { x: 1560, y: GROUND_TOP },
     goal: { x: 3520, y: GROUND_TOP }
   }
 ];
+
+/* ==========================================================================
+   第 4 ~ 200 关：确定性程序生成（同一关号永远生成同一份几何，便于复现与测试）
+   安全余量按 FEEL 反推：跳跃高 112 px、水平滞空 ≈0.61 s × 320 ≈ 195 px
+   → 台阶抬升 ≤ 92 px、坑宽 ≤ 145 px（留 ~25% 余量），保证每关可通
+   ========================================================================== */
+const TOTAL_LEVELS = 200;
+
+const LEVEL_THEMES = [
+  '荒野', '裂隙', '熔岩', '冰原', '机械', '深空', '回廊', '遗迹', '风暴', '极夜',
+  '藤蔓', '辐射', '沙丘', '潮汐', '钢都', '星尘', '断崖', '钟楼', '雾林', '熔核'
+];
+
+function levelRandom(seed) {
+  let a = seed;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function buildLevel(no) {
+  const d = (no - 4) / (TOTAL_LEVELS - 4);          // 0 → 1 难度
+  const rnd = levelRandom(no * 7919 + 13);
+
+  const segCount = 3 + Math.round(d * 3);           // 3~6 段地面
+  const gapMax = 90 + d * 55;                       // 坑宽 90~145
+
+  const ground = [];
+  const plat = [];
+  const block = [];
+  const spikes = [];
+  const coins = [];
+  const foes = [];
+  const segs = [];
+
+  let cursor = 0;
+  for (let i = 0; i < segCount; i++) {
+    const len = 340 + Math.round(rnd() * 160);      // 段长 340~500
+    ground.push([cursor, cursor + len]);
+    segs.push({ from: cursor, to: cursor + len });
+    cursor += len;
+    if (i < segCount - 1) cursor += 80 + Math.round(rnd() * Math.max(1, gapMax - 80));
+  }
+  const width = cursor;
+
+  const spawn = { x: 60, y: GROUND_TOP - 40 };
+  const lastSeg = segs[segs.length - 1];
+  const goal = { x: lastSeg.to - 70, y: GROUND_TOP };
+  const midSeg = segs[Math.floor(segs.length / 2)];
+  const checkpoint = { x: midSeg.from + 70, y: GROUND_TOP };
+
+  /* 出生点、检查点、终点周围不放尖刺/敌人 */
+  const safeZones = [
+    { x: spawn.x, r: 120 },
+    { x: checkpoint.x, r: 100 },
+    { x: goal.x, r: 150 }
+  ];
+  const keepClear = (x, r) => safeZones.every((z) => Math.abs(x - z.x) > z.r + r);
+
+  segs.forEach((seg, si) => {
+    const len = seg.to - seg.from;
+
+    /* 单向平台 + 平台上方金币（同一段内两块平台互不重叠，避免同高叠放） */
+    const platCount = si === 0 ? 0 : (rnd() < 0.35 + d * 0.55 ? 2 : 1);
+    const placed = [];
+    for (let k = 0; k < platCount; k++) {
+      const w = 88 + Math.round(rnd() * 72);
+      let x = 0;
+      let ok = false;
+      for (let tries = 0; tries < 8; tries++) {
+        x = seg.from + 80 + Math.round(rnd() * Math.max(1, len - 160 - w));
+        if (placed.every((p) => x + w + 48 < p.x || x > p.x + p.w + 48)) { ok = true; break; }
+      }
+      if (!ok) continue;
+      const y = GROUND_TOP - (60 + Math.round(rnd() * 32));   // 抬升 60~92
+      plat.push({ x, y, w });
+      coins.push({ x: Math.round(x + w / 2), y: y - 32 });
+      placed.push({ x, w });
+    }
+
+    /* 尖刺：每段最多一处 */
+    if (si > 0 && rnd() < 0.25 + d * 0.6) {
+      const w = rnd() < 0.5 ? 64 : 96;
+      const x = seg.from + 100 + Math.round(rnd() * Math.max(1, len - 200 - w));
+      if (keepClear(x + w / 2, w / 2)) spikes.push({ x, y: GROUND_TOP, w });
+    }
+
+    /* 巡逻敌人：范围锁在段内 */
+    if (si > 0 && rnd() < 0.15 + d * 0.5) {
+      const from = seg.from + 50;
+      const to = seg.to - 50;
+      const cx = Math.round((from + to) / 2);
+      if (to - from > 200 && keepClear(cx, 110)) {
+        foes.push({ x: cx, y: GROUND_TOP - 14, from, to, speed: 70 + Math.round(rnd() * 60) });
+      }
+    }
+
+    /* 地面金币 */
+    const coinCount = 1 + Math.round(rnd() * 2);
+    for (let k = 0; k < coinCount; k++) {
+      const x = Math.round(seg.from + 60 + rnd() * Math.max(1, len - 120));
+      coins.push({ x, y: GROUND_TOP - 52 });
+    }
+  });
+
+  /* 高难度关追加一个实心台块：抬升 95（<112 跳高，且高于平台区间，不会与平台同高叠放） */
+  if (d > 0.5 && rnd() < 0.5 && segs.length > 1) {
+    const seg = segs[1 + Math.floor(rnd() * (segs.length - 1))];
+    const x = Math.round(seg.from + 120);
+    const clash = spikes.some((s) => x < s.x + s.w && x + 96 > s.x) ||
+                  plat.some((p) => x < p.x + p.w && x + 96 > p.x);
+    if (x + 96 < seg.to - 60 && !clash) block.push({ x, y: GROUND_TOP - 95, w: 96, h: 95 });
+  }
+
+  return {
+    name: '第 ' + no + ' 关 · ' + LEVEL_THEMES[no % LEVEL_THEMES.length],
+    width,
+    spawn, ground, plat, block, spikes, coins, foes, checkpoint, goal
+  };
+}
+
+for (let n = 4; n <= TOTAL_LEVELS; n++) LEVELS.push(buildLevel(n));
+

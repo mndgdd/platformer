@@ -52,7 +52,7 @@ class TitleScene extends Phaser.Scene {
       ...FONT, fontSize: '44px', color: '#e9f0ff', fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    this.add.text(VIEW.W / 2, 188, '三段关卡 · 金币 · 尖刺 · 巡逻敌人', {
+    this.add.text(VIEW.W / 2, 188, LEVELS.length + ' 关 · 金币 · 尖刺 · 巡逻敌人 · 广告复活', {
       ...FONT, fontSize: '18px', color: '#9fb0d0'
     }).setOrigin(0.5);
 
@@ -169,7 +169,7 @@ class PlayScene extends Phaser.Scene {
   create() {
     const L = LEVELS[this.levelIndex];
     this.level = L;
-    this.registry.set('levelName', L.name);
+    this.registry.set('levelName', L.name + '   ' + (this.levelIndex + 1) + '/' + LEVELS.length);
     this.registry.set('revivesLeft', this.revivesLeft());
 
     this.solids = [];
